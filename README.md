@@ -8,9 +8,11 @@ needing a full Isaac Sim / Omniverse Kit install — see "why" below.
 This directory is a standalone, pip-installable task package — it does **not**
 contain Isaac Lab itself. Isaac Lab 3.0 gets cloned separately on the cluster.
 
-**Status: confirmed working on Capella** (`scripts/environments/zero_agent.py`
-constructs and steps the env successfully as of this writing). Real training
-run and contact-sensor validation still to be confirmed — see Testing below.
+**Status: blocked on a robot USD asset compatibility issue** (as of last
+session). Config/env code itself is confirmed working — `zero_agent.py` got
+past env construction, past the ground-plane/marker fixes, and failed only
+when spawning the actual robots. See "Blocked: legacy USD asset
+compatibility" below for the full diagnosis and where to pick back up.
 
 ## Why kit-less, not full Isaac Sim
 
@@ -111,6 +113,64 @@ Fixes are folded into the setup steps below.
 5. External task packages aren't auto-imported by Isaac Lab's own scripts
    (`train.py`, `zero_agent.py`, etc.) — see step 4 below for the wrapper
    pattern needed to work around this.
+
+## Blocked: legacy USD asset compatibility (current status)
+
+`zero_agent_bimanual.py` gets past env construction, the ground-plane spawn,
+and the debug markers (both fixed — see above), then fails spawning the
+actual robots:
+
+```
+Encountered: std::bad_alloc, while reading @.../ur5e_4f_ros2.usd@
+```
+
+**Diagnosis, fully isolated:**
+
+- Not corruption: sha256 of the file on Capella matches the original 1.2.0
+  repo exactly.
+- Not `usd-core` 25.11-specific: `usd-core==24.11` (tested locally on macOS)
+  and `usd-exchange`'s bundled Omniverse-CI build (`pxrInternal_v0_25_5`,
+  tested on Capella) both fail identically on the same files.
+- Not an environment/memory-limit issue: a trivial file created *and read
+  back* with the exact same `usd-core` 25.11, in the exact same container/venv
+  that fails on the robot files, works fine — for both `.usda` (ASCII) and
+  `.usdc` (binary crate) formats.
+- Both robot USDs fail (`gen3_4f.usd`, 6MB; `ur5e_4f_ros2.usd`, 27MB) — not
+  file-size-specific.
+- The files are "USD crate, version 0.8.0" — a genuinely old format (roughly
+  2019-2020-era Pixar USD). This task's ~30M-step SB3 checkpoints prove they
+  loaded fine under whatever Isaac Sim/Kit version originally trained it.
+
+**Conclusion**: every 2025-era USD build tried (3 so far, from 2 different
+vendors) fails on these specific old files; only the original, much older
+Isaac Sim/Kit runtime is known to read them correctly.
+
+**In progress, not yet working**: pulling an old Isaac Sim Docker image via
+Apptainer (`nvcr.io/nvidia/isaac-sim:4.2.0`, guessed to roughly match this
+repo's pinned Isaac Lab 1.2.0 era) to use *only its bundled `pxr` library*
+directly — no `SimulationApp`/Kit app launch, so no Vulkan/renderer
+requirement — to re-save the two files into a format the modern kit-less
+reader can open. Progress so far:
+
+```bash
+apptainer pull /data/horse/ws/hapi039h-handover/isaac-sim-4.2.sif docker://nvcr.io/nvidia/isaac-sim:4.2.0
+apptainer exec --nv --bind /data:/data /data/horse/ws/hapi039h-handover/isaac-sim-4.2.sif bash
+source /isaac-sim/setup_conda_env.sh   # confirmed: this correctly populates PYTHONPATH
+# but: `python`, `python.sh`, and `/isaac-sim/python.sh` all report "no python" --
+# not yet resolved. Possible causes to check next: this NGC tag may not bundle a
+# full Python runtime the way assumed; wrong container tag entirely; or the
+# python binary needs a different invocation path than guessed. Start by just
+# `ls /isaac-sim/` and looking for whatever the actual Python entry point is
+# (find . -iname "python*" -maxdepth 2 from /isaac-sim), rather than assuming
+# python.sh is it.
+```
+
+**Fallback if this doesn't pan out**: ask whoever originally trained this task
+(their working Isaac Sim setup can open these files fine) to re-save
+`ur5e_4f_ros2.usd` and `gen3_4f.usd` and send them back — a ~10 minute favor,
+see the conversation history for exactly what to ask for. Regenerating from
+the URDF sources in `assets/config/urdf/` via `usd-exchange`'s authoring API
+is the other fallback, but it's substantial new engineering, not a quick fix.
 
 ## Setup on Capella
 
