@@ -155,14 +155,33 @@ reader can open. Progress so far:
 ```bash
 apptainer pull /data/horse/ws/hapi039h-handover/isaac-sim-4.2.sif docker://nvcr.io/nvidia/isaac-sim:4.2.0
 apptainer exec --nv --bind /data:/data /data/horse/ws/hapi039h-handover/isaac-sim-4.2.sif bash
-source /isaac-sim/setup_conda_env.sh   # confirmed: this correctly populates PYTHONPATH
-# but: `python`, `python.sh`, and `/isaac-sim/python.sh` all report "no python" --
-# not yet resolved. Possible causes to check next: this NGC tag may not bundle a
-# full Python runtime the way assumed; wrong container tag entirely; or the
-# python binary needs a different invocation path than guessed. Start by just
-# `ls /isaac-sim/` and looking for whatever the actual Python entry point is
-# (find . -iname "python*" -maxdepth 2 from /isaac-sim), rather than assuming
-# python.sh is it.
+source /isaac-sim/setup_conda_env.sh   # confirmed: correctly populates PYTHONPATH
+
+# bare `python` isn't on PATH in this container -- use the wrapper script directly:
+/isaac-sim/python.sh -c "
+from pxr import Usd
+print(Usd.GetVersion())
+s = Usd.Stage.Open('/data/horse/ws/hapi039h-handover/aurova_bimanual_handover_isaaclab3/aurova_bimanual_handover/assets/config/usd/gen3_4f.usd')
+print('opened ok:', s)
+"
+```
+
+This gets past `ModuleNotFoundError` (that invocation is correct) but currently
+hits `ImportError: cannot import name 'Usd' from 'pxr' (unknown location)`.
+Root cause: an errant `pip install pxr-boost` (into user site-packages, since
+`/isaac-sim/kit/...` isn't writable) left behind a shadowing incomplete `pxr`
+namespace package that `pip uninstall -y pxr-boost` did NOT fully clean up
+(old pip, 21.2.1, has known namespace-package uninstall issues). "(unknown
+location)" is the tell — that's what a namespace package with no single
+`__init__.py` prints instead of a real path.
+
+**Next step to try**: find and manually remove whatever's left behind, since
+`pip uninstall` didn't get it:
+
+```bash
+/isaac-sim/python.sh -c "import pxr; print(pxr.__file__, pxr.__path__)"
+# then manually rm -rf whatever stale directory that reveals (likely under
+# ~/.local/lib/python3.10/site-packages/pxr), and retry the Usd import test
 ```
 
 **Fallback if this doesn't pan out**: ask whoever originally trained this task
