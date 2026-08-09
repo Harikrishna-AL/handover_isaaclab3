@@ -15,14 +15,13 @@ from isaaclab.assets import Articulation
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 from isaaclab.utils.math import euler_xyz_from_quat
 from isaaclab.sensors import CameraCfg, ContactSensorCfg
-from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.markers import VisualizationMarkersCfg
 from isaaclab.assets import RigidObjectCfg
 
-from isaaclab_physx.physics import PhysxCfg
+from isaaclab_ovphysx.physics import OvPhysxCfg
 
 '''
                     ############## IMPORTANT #################
@@ -72,8 +71,11 @@ class BimanualDirectCfg(DirectRLEnvCfg):
     translation_scale = torch.tensor([0.02, 0.02, 0.02]) # Action translation scalation
     hand_joint_scale = 0.075    # Hand joint scalation
 
-    num_actions = 6 + 3            # Number of actions per environment (overridden)
-    num_observations = 7 + 7 +  3  # Number of observations per environment (overridden)
+    # NOTE (Isaac Lab 3.0 port): DirectRLEnvCfg requires action_space/observation_space
+    # directly -- the old num_actions/num_observations shorthand is no longer read.
+    action_space = 6 + 3            # Number of actions per environment (overridden)
+    observation_space = 7 + 7 + 3   # Number of observations per environment (overridden)
+    state_space = 0
     euler_flag = True              # Wether to use Euler angles or quaternions for the actions
 
     # Simulation variables
@@ -101,9 +103,13 @@ class BimanualDirectCfg(DirectRLEnvCfg):
     # ---- Configurations ----
     # Simulation
     # NOTE: Isaac Lab 3.0 requires an explicit physics backend config on SimulationCfg.
-    # This task is PhysX-only (not ported to the Newton backend) — see README for why.
+    # This uses OvPhysxCfg (the kit-less PhysX runtime, matching the `ov[ovphysx]`
+    # install), NOT isaaclab_physx.physics.PhysxCfg — that class specifically means
+    # the full Isaac-Sim/Kit-based PhysX and forces `needs_kit=True` in
+    # isaaclab_tasks.utils.sim_launcher, which fails outright with no Isaac Sim
+    # installed. This task is not ported to the Newton backend — see README for why.
     sim: SimulationCfg = SimulationCfg(
-        dt=1 / max_steps, render_interval=decimation, physics=PhysxCfg()
+        dt=1 / max_steps, render_interval=decimation, physics=OvPhysxCfg()
     )
     # SimulationCfg: configuration for simulation physics
     #    dt: time step of the simulation (seconds)
@@ -145,39 +151,45 @@ class BimanualDirectCfg(DirectRLEnvCfg):
     #    init_state: Initial state of the rigid object. --> Initial pose
 
     # Markers
+    # NOTE (Isaac Lab 3.0 kit-less port): the original marker shape referenced a
+    # Nucleus-hosted asset ({ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd),
+    # which needs omni.client to resolve and isn't available kit-less. Replaced
+    # with a small procedural sphere per marker (SphereCfg never touches
+    # check_file_path()) -- purely cosmetic, only visible when debug_markers=True.
     marker_cfg: VisualizationMarkersCfg = VisualizationMarkersCfg(
         prim_path="/Visuals/myMarkers",
         markers={
-            "ur5e_ee_pose": sim_utils.UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
-                scale=(0.1, 0.1, 0.1),
+            "ur5e_ee_pose": sim_utils.SphereCfg(
+                radius=0.02,
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),
                 visible = debug_markers
             ),
-            "grasp_point_obj": sim_utils.UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
-                scale=(0.1, 0.1, 0.1),
+            "grasp_point_obj": sim_utils.SphereCfg(
+                radius=0.02,
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0)),
                 visible = debug_markers
             ),
-            "gen3_ee_pose": sim_utils.UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
-                scale=(0.1, 0.1, 0.1),
+            "gen3_ee_pose": sim_utils.SphereCfg(
+                radius=0.02,
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 0.0, 1.0)),
                 visible = debug_markers
             ),
-            "tips": sim_utils.UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
-                scale=(0.1, 0.1, 0.1),
+            "tips": sim_utils.SphereCfg(
+                radius=0.02,
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 1.0, 0.0)),
                 visible = debug_markers
             ),
-            "tips_back": sim_utils.UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
-                scale=(0.1, 0.1, 0.1),
+            "tips_back": sim_utils.SphereCfg(
+                radius=0.02,
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 1.0)),
                 visible = debug_markers
             ),
         }
     )
     # VisualizationMarkersCfg: A class to configure a VisualizationMarkers.
     #    markers: The dictionary of marker configurations.
-    #       UsdFileCfg: USD file to spawn asset from. --> In this case, a frame prim is imported from its USD file.
+    #       SphereCfg: procedural sphere spawner (kit-less safe). Was UsdFileCfg
+    #       pointing at a Nucleus-hosted frame_prim.usd in the original.
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs = num_envs, env_spacing = 2.5, replicate_physics = True)

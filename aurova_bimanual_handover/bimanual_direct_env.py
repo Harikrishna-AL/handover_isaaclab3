@@ -14,7 +14,6 @@ from .bimanual_direct_env_cfg import BimanualDirectCfg, update_cfg, update_colli
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation
 from isaaclab.envs import DirectRLEnv
-from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from isaaclab.utils.math import sample_uniform
 from isaaclab.controllers import DifferentialIKController, DifferentialIKControllerCfg
 from isaaclab.utils.math import subtract_frame_transforms, combine_frame_transforms
@@ -143,7 +142,17 @@ class BimanualDirect(DirectRLEnv):
         '''
 
         # Add ground plane
-        spawn_ground_plane(prim_path = "/World/ground", cfg = GroundPlaneCfg())
+        # NOTE (Isaac Lab 3.0 kit-less port): GroundPlaneCfg()'s default usd_path
+        # points at a Nucleus-hosted asset ({ISAAC_NUCLEUS_DIR}/Environments/Grid/...).
+        # With no Isaac Sim / omni.client available, that can't be resolved, so this
+        # spawns a plain static procedural collider instead (same pattern already
+        # used for `object_cfg` below -- CuboidCfg never touches check_file_path()).
+        ground_cfg = sim_utils.CuboidCfg(
+            size=(200.0, 200.0, 0.1),
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.2, 0.2)),
+        )
+        ground_cfg.func("/World/ground", ground_cfg, translation=(0.0, 0.0, -0.05))
 
         # Clone, filter and replicate
         self.scene.clone_environments(copy_from_source=False)
