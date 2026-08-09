@@ -122,7 +122,7 @@ apptainer pull ubuntu2204-cuda.sif docker://nvcr.io/nvidia/cuda:12.8.1-base-ubun
 ```
 
 Everything from here on — install *and* later training/testing — runs inside
-this container via `apptainer exec --nv ubuntu2204-cuda.sif bash`, since the
+this container via `apptainer exec --nv --bind /data:/data ubuntu2204-cuda.sif bash`, since the
 venv ends up with glibc-2.35-linked binaries that won't run on the bare host
 (2.34). `git` isn't in this minimal image; clone repos from the host, only
 `pip`/`python` need to run inside the container.
@@ -139,7 +139,7 @@ sed -i '/usd-exchange>=2.2/d' source/isaaclab/setup.py
 python3 -m venv /data/horse/ws/hapi039h-handover/isaaclab3-venv
 
 # now enter the container for everything else
-apptainer exec --nv /data/horse/ws/hapi039h-handover/ubuntu2204-cuda.sif bash
+apptainer exec --nv --bind /data:/data /data/horse/ws/hapi039h-handover/ubuntu2204-cuda.sif bash
 source /data/horse/ws/hapi039h-handover/isaaclab3-venv/bin/activate
 cd /data/horse/ws/hapi039h-handover/isaaclab3
 ./isaaclab.sh -i 'ov[ovphysx],rl[sb3]'
@@ -193,7 +193,7 @@ EOF
 
 WS=/data/horse/ws/hapi039h-handover
 
-apptainer exec --nv "$WS/ubuntu2204-cuda.sif" bash -c "
+apptainer exec --nv --bind /data:/data "$WS/ubuntu2204-cuda.sif" bash -c "
     source $WS/isaaclab3-venv/bin/activate
     cd $WS/isaaclab3
     python scripts/reinforcement_learning/train_bimanual.py \
@@ -218,7 +218,7 @@ once stage 5 below passes.
 srun --account=p_lv_ra_2526 --partition=capella --nodes=1 --gpus=1 \
      --cpus-per-task=8 --mem=32G --time=01:00:00 --pty bash
 
-apptainer exec --nv /data/horse/ws/hapi039h-handover/ubuntu2204-cuda.sif bash
+apptainer exec --nv --bind /data:/data /data/horse/ws/hapi039h-handover/ubuntu2204-cuda.sif bash
 source /data/horse/ws/hapi039h-handover/isaaclab3-venv/bin/activate
 cd /data/horse/ws/hapi039h-handover/isaaclab3
 nvidia-smi   # sanity check the GPU is visible in the allocation

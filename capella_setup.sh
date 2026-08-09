@@ -49,7 +49,7 @@ else
 fi
 
 echo "[6/6] Container-side install (this is the slow part, several minutes)"
-apptainer exec --nv "$SIF" bash -c "
+apptainer exec --nv --bind /data:/data "$SIF" bash -c "
     set -euo pipefail
     source '$VENV/bin/activate'
     cd '$ISAACLAB'
@@ -70,6 +70,6 @@ EOF
 "
 
 echo "Done. To work interactively:"
-echo "  apptainer exec --nv $SIF bash"
+echo "  apptainer exec --nv --bind /data:/data $SIF bash"
 echo "  source $VENV/bin/activate"
 echo "  cd $ISAACLAB"
