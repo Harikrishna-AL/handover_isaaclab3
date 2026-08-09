@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aurova_bimanual_handover"
+version = "0.1.0"
+description = "Bimanual UR5e + Kinova GEN3 object-handover Direct RL task for Isaac Lab 3.0 (PhysX backend)."
+requires-python = ">=3.10"
+dependencies = [
+    "scipy",
+    "matplotlib",
+]
+
+[tool.setuptools.packages.find]
+include = ["aurova_bimanual_handover*"]
+
+[tool.setuptools.package-data]
+aurova_bimanual_handover = ["assets/**/*", "agents/*.yaml"]
