@@ -175,13 +175,59 @@ namespace package that `pip uninstall -y pxr-boost` did NOT fully clean up
 location)" is the tell — that's what a namespace package with no single
 `__init__.py` prints instead of a real path.
 
-**Next step to try**: find and manually remove whatever's left behind, since
-`pip uninstall` didn't get it:
+**Next step to try (bare pxr route)**: find and manually remove whatever's
+left behind, since `pip uninstall` didn't get it:
 
 ```bash
 /isaac-sim/python.sh -c "import pxr; print(pxr.__file__, pxr.__path__)"
 # then manually rm -rf whatever stale directory that reveals (likely under
 # ~/.local/lib/python3.10/site-packages/pxr), and retry the Usd import test
+```
+
+**Alternative route tried, more promising**: launching the actual
+`SimulationApp` (headless) instead of bare `pxr` -- this goes through Isaac
+Sim's real extension/schema registration, which may also sidestep the
+namespace-package shadowing issue entirely:
+
+```bash
+/isaac-sim/python.sh -c "
+from omni.isaac.kit import SimulationApp
+simulation_app = SimulationApp({'headless': True})
+
+from pxr import Usd
+s = Usd.Stage.Open('/data/horse/ws/hapi039h-handover/aurova_bimanual_handover_isaaclab3/aurova_bimanual_handover/assets/config/usd/gen3_4f.usd')
+print('opened ok:', s)
+
+simulation_app.close()
+"
+```
+
+This got further than anything else tried: app booted successfully ("app
+ready"), RTX renderer failed to init (expected -- no Vulkan on this node,
+consistent with everything else found in this whole investigation, and
+apparently non-fatal here), then it **hung** (not crashed) right after:
+
+```
+FileNotFoundError: [Errno 2] No such file or directory:
+  '/isaac-sim/kit/cache/Kit/106.1/10a4b5c0/material_cache.json'
+```
+
+This looks like an `asyncio` background task exception
+(`MaterialLibraryExtension.__preload_base_material_subids`, "Task exception
+was never retrieved") that's usually non-fatal on its own, but something
+downstream appears to be waiting on it indefinitely.
+
+**Next step to try**: pre-create the missing cache directory before
+launching, so that background task can actually complete instead of stalling
+whatever's waiting on it:
+
+```bash
+mkdir -p /isaac-sim/kit/cache/Kit/106.1/10a4b5c0/
+# (if that path isn't writable -- it's inside the pulled container image --
+# may need to point Kit's cache dir elsewhere via an env var, e.g. a
+# `--/app/...cache...` kwarg to SimulationApp, or a writable KIT_CACHE_DIR-style
+# override; check `SimulationApp` kwargs / omni.kit cache settings if the
+# mkdir alone doesn't fix it)
 ```
 
 **Fallback if this doesn't pan out**: ask whoever originally trained this task
